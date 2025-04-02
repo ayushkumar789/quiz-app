@@ -82,6 +82,7 @@ io.on('connection', (socket) => {
                 const correct = questions[index].correctAnswer;
                 if (correct === answer) {
                     scores[socket.id] = (scores[socket.id] || 0) + 1;
+                    io.to(room).emit('update_leaderboard', scores);
                 }
             });
 
