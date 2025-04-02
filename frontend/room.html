@@ -1,10 +1,71 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Title</title>
+    <title>Quiz Room</title>
+    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
 </head>
 <body>
+<h2>Join a Room</h2>
+<input id="username" placeholder="Enter username" />
+<input id="room" placeholder="Enter room code" />
+<button onclick="joinRoom()">Join</button>
 
+<h3>Users in Room:</h3>
+<ul id="users"></ul>
+<button onclick="startQuiz()">Start Quiz (Admin only)</button>
+
+<div id="quiz">
+    <h2 id="questionText"></h2>
+    <div id="options"></div>
+</div>
+
+<h3 id="result"></h3>
+
+
+<script>
+    const socket = io("http://localhost:5000");
+
+    function joinRoom() {
+        const username = document.getElementById('username').value;
+        const room = document.getElementById('room').value;
+        socket.emit('join_room', { username, room });
+    }
+
+    socket.on('room_users', (users) => {
+        const ul = document.getElementById('users');
+        ul.innerHTML = '';
+        users.forEach(user => {
+            const li = document.createElement('li');
+            li.textContent = user.username;
+            ul.appendChild(li);
+        });
+    });
+    function startQuiz() {
+        const room = document.getElementById('room').value;
+        console.log("Starting quiz in room:", room); // ✅ Debug log
+        socket.emit('start_quiz', room);
+    }
+
+    socket.on('new_question', (data) => {
+        document.getElementById('questionText').textContent = data.question;
+
+        const opts = document.getElementById('options');
+        opts.innerHTML = '';
+        data.options.forEach(opt => {
+            const btn = document.createElement('button');
+            btn.textContent = opt;
+            btn.onclick = () => {
+                socket.emit('submit_answer', { answer: opt, index: data.index, room: document.getElementById('room').value });
+            };
+            opts.appendChild(btn);
+        });
+    });
+
+    socket.on('quiz_ended', (scores) => {
+        const score = scores[socket.id] || 0;
+        document.getElementById('result').textContent = `Quiz Ended! Your Score: ${score}`;
+    });
+
+</script>
 </body>
 </html>
