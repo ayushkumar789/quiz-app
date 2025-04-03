@@ -1,125 +1,187 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
     <title>Quiz Room</title>
     <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes shake {
+            0% { transform: translateX(0); }
+            25% { transform: translateX(-4px); }
+            50% { transform: translateX(4px); }
+            75% { transform: translateX(-4px); }
+            100% { transform: translateX(0); }
+        }
+
+        .animate-shake {
+            animation: shake 0.4s ease-in-out;
+        }
+    </style>
+
 </head>
-<body>
-<h2>Join a Room</h2>
-<input id="username" placeholder="Enter username" />
-<input id="room" placeholder="Enter room code" />
-<button onclick="joinRoom()">Join</button>
+<body class="bg-gray-100 text-gray-800 p-4 font-sans">
 
-<h3>Users in Room:</h3>
-<ul id="users"></ul>
-<button onclick="startQuiz()">Start Quiz (Admin only)</button>
-<p id="timer">Time Left: <span id="time">15</span>s</p>
+<div class="max-w-3xl mx-auto">
+    <div class="mb-6">
+        <h1 class="text-3xl font-bold text-center mb-4">🎓 Real-Time Quiz Room</h1>
+        <div class="flex gap-2 justify-center">
+            <input id="username" type="text" placeholder="Enter username" class="border p-2 rounded w-1/3" />
+            <input id="room" type="text" placeholder="Enter room code" class="border p-2 rounded w-1/3" />
+            <button onclick="joinRoom()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Join</button>
+        </div>
+    </div>
 
-<div id="quiz">
-    <h2 id="questionText"></h2>
-    <div id="options"></div>
+    <div class="bg-white p-4 rounded shadow mb-4">
+        <h2 class="text-xl font-semibold mb-2">👥 Users in Room:</h2>
+        <ul id="users" class="list-disc list-inside text-gray-700"></ul>
+    </div>
+
+    <div class="flex items-center justify-between mb-4">
+        <button onclick="startQuiz()" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">Start Quiz (Admin only)</button>
+        <div class="flex items-center justify-center mb-4">
+            <div class="relative w-16 h-16">
+                <svg class="transform -rotate-90" viewBox="0 0 36 36">
+                    <path class="text-gray-300" stroke-width="3" fill="none" d="M18 2.0845
+        a 15.9155 15.9155 0 0 1 0 31.831
+        a 15.9155 15.9155 0 0 1 0 -31.831" />
+                    <path id="timerCircle" class="text-orange-500 stroke-current"
+                          stroke-width="3" fill="none" stroke-dasharray="100, 100"
+                          d="M18 2.0845
+          a 15.9155 15.9155 0 0 1 0 31.831
+          a 15.9155 15.9155 0 0 1 0 -31.831" />
+                </svg>
+                <div class="absolute inset-0 flex items-center justify-center text-sm font-bold text-orange-600">
+                    <span id="time">15</span>s
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div id="quiz" class="bg-white p-6 rounded shadow mb-4">
+        <h2 id="questionText" class="text-2xl font-semibold mb-4"></h2>
+        <div id="options" class="space-y-2"></div>
+    </div>
+
+    <div id="leaderboard" class="bg-white p-6 rounded shadow mb-4">
+        <h3 class="text-xl font-bold mb-2 flex items-center gap-2"><i data-lucide="trophy"></i> Live Leaderboard</h3>
+        <ul id="leaderboardList" class="space-y-1 text-gray-700"></ul>
+    </div>
+
+    <h3 id="result" class="text-center text-xl font-semibold text-green-600"></h3>
 </div>
-<div id="leaderboard">
-    <h3>🏆 Live Leaderboard</h3>
-    <ul id="leaderboardList"></ul>
-</div>
-
-
-<h3 id="result"></h3>
-
 
 <script>
+    lucide.createIcons(); // render icons
     const socket = io("http://localhost:5000");
-    const userMap = {}; // socketId => username
+    const userMap = {};
+    let mySocketId = null;
+
+    socket.on("connect", () => {
+        mySocketId = socket.id;
+    });
 
     function joinRoom() {
-        const username = document.getElementById('username').value;
-        const room = document.getElementById('room').value;
-        socket.emit('join_room', { username, room });
+        const username = document.getElementById("username").value;
+        const room = document.getElementById("room").value;
+        socket.emit("join_room", { username, room });
     }
 
-    socket.on('room_users', (users) => {
-        const ul = document.getElementById('users');
-        ul.innerHTML = '';
+    socket.on("room_users", (users) => {
+        const ul = document.getElementById("users");
+        ul.innerHTML = "";
 
         users.forEach(user => {
-            const li = document.createElement('li');
+            const li = document.createElement("li");
             li.textContent = user.username;
             ul.appendChild(li);
-
-            // Store for leaderboard mapping
             userMap[user.socketId] = user.username;
         });
     });
 
     function startQuiz() {
-        const room = document.getElementById('room').value;
-        console.log("Starting quiz in room:", room); // ✅ Debug log
-        socket.emit('start_quiz', room);
+        const room = document.getElementById("room").value;
+        socket.emit("start_quiz", room);
     }
 
-    let countdownInterval; // global to clear between questions
+    let countdownInterval;
 
-    socket.on('new_question', (data) => {
-        document.getElementById('questionText').textContent = data.question;
-
-        const opts = document.getElementById('options');
-        opts.innerHTML = '';
+    socket.on("new_question", (data) => {
+        document.getElementById("questionText").textContent = data.question;
+        const opts = document.getElementById("options");
+        opts.innerHTML = "";
 
         data.options.forEach(opt => {
-            const btn = document.createElement('button');
+            const btn = document.createElement("button");
             btn.textContent = opt;
+            btn.className = "w-full bg-blue-100 hover:bg-blue-200 text-lg p-2 rounded border border-blue-300";
             btn.onclick = () => {
-                socket.emit('submit_answer', {
+                socket.emit("submit_answer", {
                     answer: opt,
                     index: data.index,
-                    room: document.getElementById('room').value
+                    room: document.getElementById("room").value
                 });
-
-                // Disable all buttons after answering
                 Array.from(opts.children).forEach(b => b.disabled = true);
+                btn.setAttribute("data-selected", "true");
             };
             opts.appendChild(btn);
         });
 
-        // TIMER STARTS HERE
-        clearInterval(countdownInterval); // clear any previous timer
+        clearInterval(countdownInterval);
         let timeLeft = 15;
-        const timerDisplay = document.getElementById('time');
-        timerDisplay.textContent = timeLeft;
+        const timeDisplay = document.getElementById("time");
+        const circle = document.getElementById("timerCircle");
+
+        timeDisplay.textContent = timeLeft;
+        circle.setAttribute("stroke-dasharray", "100, 100");
 
         countdownInterval = setInterval(() => {
             timeLeft--;
-            timerDisplay.textContent = timeLeft;
+            const percentage = (timeLeft / 15) * 100;
+            timeDisplay.textContent = timeLeft;
+            circle.setAttribute("stroke-dasharray", `${percentage}, 100`);
 
-            if (timeLeft <= 0) {
-                clearInterval(countdownInterval);
-                opts.innerHTML = '<p>⏰ Time\'s up!</p>';
-            }
+            if (timeLeft <= 0) clearInterval(countdownInterval);
         }, 1000);
+
     });
 
+    socket.on("reveal_answer", (data) => {
+        const opts = document.getElementById("options").children;
 
-    socket.on('quiz_ended', (scores) => {
-        const score = scores[socket.id] || 0;
-        document.getElementById('result').textContent = `Quiz Ended! Your Score: ${score}`;
+        Array.from(opts).forEach(btn => {
+            const isSelected = btn.getAttribute("data-selected") === "true";
+            if (btn.textContent === data.correctAnswer) {
+                btn.classList.add("bg-green-200", "border-green-400", "animate-pulse", "transition-all", "duration-300");
+
+            } else if (isSelected) {
+                btn.classList.add("bg-red-200", "border-red-400", "animate-shake", "transition-all", "duration-300");
+
+            }
+            btn.disabled = true;
+        });
     });
-    socket.on('update_leaderboard', (scores) => {
-        const list = document.getElementById('leaderboardList');
-        list.innerHTML = '';
 
-        // Convert to array and sort descending by score
+    socket.on("update_leaderboard", (scores) => {
+        const list = document.getElementById("leaderboardList");
+        list.innerHTML = "";
+
         const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
 
         sorted.forEach(([socketId, score]) => {
-            const name = userMap[socketId] || 'Anonymous';
-            const li = document.createElement('li');
-            li.textContent = `${name}: ${score}`;
+            const name = userMap[socketId] || "Player";
+            const li = document.createElement("li");
+            li.innerHTML = `<span class="font-semibold">${name}</span>: ${score}`;
             list.appendChild(li);
         });
     });
 
-
+    socket.on("quiz_ended", (scores) => {
+        const score = scores[socket.id] || 0;
+        document.getElementById("result").textContent = `🎉 Quiz Ended! Your Score: ${score}`;
+    });
 </script>
 </body>
 </html>

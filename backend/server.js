@@ -14,15 +14,10 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 
-// Apply middleware BEFORE routes
 app.use(cors());
 app.use(express.json());
-
-// Register routes
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
-
-
 
 const io = new Server(server, {
     cors: {
@@ -31,8 +26,11 @@ const io = new Server(server, {
     }
 });
 
-// Room state
-const roomUsers = {};
+// ======= Room-Level Global State =======
+const roomUsers = {};            // { room: [{ socketId, username }] }
+const roomScores = {};           // { room: { socketId: score } }
+const roomQuestions = {};        // { room: [questions] }
+const roomIndexes = {};          // { room: currentQuestionIndex }
 
 io.on('connection', (socket) => {
     console.log(`User connected: ${socket.id}`);
@@ -42,57 +40,40 @@ io.on('connection', (socket) => {
         if (!roomUsers[room]) roomUsers[room] = [];
         roomUsers[room].push({ socketId: socket.id, username });
 
-        console.log(`${username} joined room ${room}`);
         io.to(room).emit('room_users', roomUsers[room]);
     });
 
     socket.on('start_quiz', async (room) => {
         console.log(`Starting quiz in room: ${room}`);
-        let currentQuestionIndex = 0;
-        let scores = {};
-
         try {
             const quiz = await Quiz.findOne({ title: room }).populate('questions');
-
             if (!quiz) {
                 io.to(room).emit('error', 'Quiz not found for this room');
                 return;
             }
 
-            const questions = quiz.questions;
+            roomScores[room] = {};
+            roomQuestions[room] = quiz.questions;
+            roomIndexes[room] = 0;
 
-            const sendQuestion = () => {
-                if (currentQuestionIndex < questions.length) {
-                    io.to(room).emit('new_question', {
-                        question: questions[currentQuestionIndex].questionText,
-                        options: questions[currentQuestionIndex].options,
-                        index: currentQuestionIndex
-                    });
-
-                    setTimeout(() => {
-                        currentQuestionIndex++;
-                        sendQuestion();
-                    }, 15000);
-                } else {
-                    io.to(room).emit('quiz_ended', scores);
-                }
-            };
-
-            socket.on('submit_answer', ({ answer, index }) => {
-                const correct = questions[index].correctAnswer;
-                if (correct === answer) {
-                    scores[socket.id] = (scores[socket.id] || 0) + 1;
-                    io.to(room).emit('update_leaderboard', scores);
-                }
-            });
-
-            sendQuestion();
+            sendQuestion(room);
         } catch (error) {
-            console.error('Error fetching quiz:', error);
+            console.error('Error starting quiz:', error);
             io.to(room).emit('error', 'Internal server error');
         }
     });
 
+    socket.on('submit_answer', ({ answer, index, room }) => {
+        const questions = roomQuestions[room];
+        const correct = questions?.[index]?.correctAnswer;
+        if (!correct) return;
+
+        if (answer === correct) {
+            roomScores[room][socket.id] = (roomScores[room][socket.id] || 0) + 1;
+        }
+
+        io.to(room).emit('update_leaderboard', roomScores[room]);
+    });
 
     socket.on('disconnect', () => {
         for (const room in roomUsers) {
@@ -103,10 +84,36 @@ io.on('connection', (socket) => {
     });
 });
 
-// Test route
+// ======= Shared Question Sender Function =======
+const sendQuestion = (room) => {
+    const questions = roomQuestions[room];
+    const index = roomIndexes[room];
+
+    if (index < questions.length) {
+        io.to(room).emit('new_question', {
+            question: questions[index].questionText,
+            options: questions[index].options,
+            correctAnswer: questions[index].correctAnswer,
+            index
+        });
+
+        setTimeout(() => {
+            io.to(room).emit('reveal_answer', {
+                correctAnswer: questions[index].correctAnswer
+            });
+
+            setTimeout(() => {
+                roomIndexes[room]++;
+                sendQuestion(room);
+            }, 3000);
+        }, 15000);
+    } else {
+        io.to(room).emit('quiz_ended', roomScores[room]);
+    }
+};
+
 app.get('/', (req, res) => res.send('Quiz Game API Running'));
 
-// MongoDB connection + start server
 mongoose.connect(process.env.MONGO_URI)
     .then(() => {
         console.log('MongoDB Connected');
