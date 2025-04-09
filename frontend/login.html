@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Qoisa - Quiz</title>
+
+    <!-- font Awesome -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+    />
+
+    <!-- Bootstrap -->
+    <link
+      rel="stylesheet"
+      href="assets/dist/framework/bootstrap/css/bootstrap.min.css"
+    />
+
+    <!-- swiper Slider -->
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
+    />
+
+    <!-- Theme Files -->
+    <link rel="stylesheet" href="assets/dist/theme/css/color.css" />
+    <link rel="stylesheet" href="assets/dist/theme/css/theme.css" />
+    <link rel="stylesheet" href="assets/dist/theme/css/responsive.css" />
+    <link rel="stylesheet" href="assets/dist/theme/css/animation.css" />
+  </head>
+  <body>
+
+    <div class="quiz">
+      <header>
+        <div class="logo">
+          <img src="assets/images/icon.png" alt="Icon" height="48" width="48" />Ayush - Quiz App<span>.</span>
+        </div>
+      </header>
+
+      <div
+        class="container flex-grow-1 d-flex flex-column align-items-center justify-content-center"
+      >
+        <div class="row">
+          <div class="col-md-7 tab-100">
+            <h1 class="mainHeading">
+              Welcome to the <strong>Frontend Quiz!</strong>
+            </h1>
+            <img class="mt-4 sideImg" src="assets/images/side.png" alt="Side" />
+          </div>
+          <div class="col-md-4 tab-70 sm-100 offset-md-1">
+            <!-- form -->
+            <div class="form">
+              <h2 class="login-form form-title">Account Login</h2>
+
+              <!-- login form -->
+              <form id="step1" class="login-form" method="post">
+                <div class="input-field">
+                  <input type="text" id="username" required />
+                  <label> Username or Email </label>
+                </div>
+                <div class="input-field delay-100ms">
+                  <input type="password" id="password" required />
+                  <label> Password </label>
+                </div>
+                <div class="d-flex justify-content-between flex-wrap">
+                  <div class="rememberme">
+                    <input type="checkbox" />
+                    <label>Remember Me</label>
+                  </div>
+                  <a href="#" class="forget">forget password</a>
+                </div>
+                <div class="login-btn">
+                  <button type="button" class="login">
+                    Login to your Account!
+                  </button>
+                </div>
+              </form>
+
+              <!-- social sign in -->
+              <div class="login-form signup_social">
+                <div class="divide-heading">
+                  <span>Login with your Social Account</span>
+                </div>
+                <div class="social-signup">
+                  <a class="facebook" href="#"
+                    ><i class="fa-brands fa-square-facebook"></i
+                  ></a>
+                  <a class="twitter" href="#"
+                    ><i class="fa-brands fa-twitter"></i
+                  ></a>
+                  <a class="twitch" href="#"
+                    ><i class="fa-brands fa-twitch"></i
+                  ></a>
+                  <a class="youtube" href="#"
+                    ><i class="fa-brands fa-youtube"></i
+                  ></a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+      document.querySelector('.login').addEventListener('click', async () => {
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value.trim();
+
+        if (!username || !password) {
+          alert("Please enter both username (or email) and password.");
+          return;
+        }
+
+        try {
+          const res = await fetch("http://localhost:5000/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username, password })
+          });
+
+          const data = await res.json();
+
+          if (res.ok && data.token && data.user) {
+            // ✅ Store token and username separately for easy access later
+            localStorage.setItem("token", data.token);
+            localStorage.setItem("username", data.user.name);
+
+            // (Optional) store full user object if you need it later
+            localStorage.setItem("user", JSON.stringify(data.user));
+
+            // ✅ Redirect to dashboard or room.html
+            window.location.href = "dashboard.html";
+          } else {
+            alert(data.msg || "Login failed. Please try again.");
+          }
+        } catch (err) {
+          alert("Error connecting to the server.");
+          console.error(err);
+        }
+      });
+    </script>
+
+
+    <!-- jQuery -->
+    <script src="assets/dist/lib/jQuery/jquery-3.7.1.min.js"></script>
+
+    <!-- Swiper Slider -->
+    <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+
+    <!-- Bootstrap JS -->
+    <script src="assets/dist/framework/bootstrap/js/bootstrap.min.js"></script>
+
+    <!-- Theme Files -->
+    <script src="assets/dist/theme/js/custom.js"></script>
+
+    <div class="cursor"></div>
+  </body>
+</html>

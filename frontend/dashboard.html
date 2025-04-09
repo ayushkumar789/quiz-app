@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Qoisa - Dashboard</title>
+
+  <!-- Font Awesome -->
+  <link
+          rel="stylesheet"
+          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+  />
+  <!-- Bootstrap -->
+  <link
+          rel="stylesheet"
+          href="assets/dist/framework/bootstrap/css/bootstrap.min.css"
+  />
+  <!-- Theme Files -->
+  <link rel="stylesheet" href="assets/dist/theme/css/color.css" />
+  <link rel="stylesheet" href="assets/dist/theme/css/theme.css" />
+  <link rel="stylesheet" href="assets/dist/theme/css/responsive.css" />
+  <link rel="stylesheet" href="assets/dist/theme/css/animation.css" />
+
+</head>
+
+<body>
+<script>
+  if (!localStorage.getItem("token")) {
+    window.location.href = "login.html";
+  }
+</script>
+
+<div class="quiz">
+  <header class="d-flex justify-content-between align-items-center p-3">
+    <div class="logo">
+      <img src="assets/images/icon.png" alt="Icon" />Qoisa<span>.</span>
+    </div>
+    <div>
+      <button class="btn btn-danger" onclick="logout()">Logout</button>
+    </div>
+  </header>
+
+  <div class="container my-5">
+    <!-- User Info -->
+    <div class="card p-4 mb-4">
+      <h3>👤 Your Info</h3>
+      <p><strong>Name:</strong> <span id="name">Loading...</span></p>
+      <p><strong>Username:</strong> <span id="username">Loading...</span></p>
+      <p><strong>Email:</strong> <span id="email">Loading...</span></p>
+      <p><strong>Phone:</strong> <span id="phone">Loading...</span></p>
+    </div>
+
+    <!-- Quiz History -->
+    <div class="card p-4 mb-4">
+      <h3>📊 Quiz History</h3>
+      <ul id="history">
+        <li>Loading history...</li>
+      </ul>
+    </div>
+
+    <!-- Start Quiz -->
+    <div class="text-center">
+      <a href="room.html" class="btn btn-primary btn-lg">
+        🚀 Start New Quiz
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- Scripts -->
+<script src="assets/dist/lib/jQuery/jquery-3.7.1.min.js"></script>
+<script src="assets/dist/framework/bootstrap/js/bootstrap.min.js"></script>
+<script src="assets/dist/theme/js/custom.js"></script>
+
+<script>
+  // Check if user is logged in
+  const userData = localStorage.getItem("user");
+
+  if (!userData) {
+    alert("Please login to continue.");
+    window.location.href = "login.html";
+  }
+
+  const user = JSON.parse(userData);
+
+  // Fill user details
+  document.getElementById("name").textContent = user.name;
+  document.getElementById("username").textContent = user.username;
+  document.getElementById("email").textContent = user.email;
+  document.getElementById("phone").textContent = user.phone || "N/A";
+
+  const token = localStorage.getItem("token");
+
+  fetch("http://localhost:5000/api/auth/history", {
+    headers: { Authorization: `Bearer ${token}` }
+  })
+          .then((res) => res.json())
+          .then((data) => {
+            const historyList = document.getElementById("history");
+            historyList.innerHTML = "";
+
+            if (!data.attempts || data.attempts.length === 0) {
+              historyList.innerHTML = "<li>No quiz attempts yet.</li>";
+              return;
+            }
+
+            data.attempts.forEach((a) => {
+              const li = document.createElement("li");
+              li.textContent = `${a.quizTitle} – Score: ${a.score}/${a.totalQuestions}`;
+              historyList.appendChild(li);
+            });
+          })
+          .catch((err) => {
+            console.error("Error fetching history:", err);
+          });
+
+
+  // Logout function
+  function logout() {
+    localStorage.clear();
+    window.location.href = "login.html";
+  }
+</script>
+
+</body>
+</html>
