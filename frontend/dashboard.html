@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Qoisa - Dashboard</title>
+  <title>Quiz - Dashboard</title>
 
   <!-- Font Awesome -->
   <link
@@ -33,7 +33,7 @@
 <div class="quiz">
   <header class="d-flex justify-content-between align-items-center p-3">
     <div class="logo">
-      <img src="assets/images/icon.png" alt="Icon" />Qoisa<span>.</span>
+      <img src="assets/images/icon.png" alt="Icon" />Quiz<span>.</span>
     </div>
     <div>
       <button class="btn btn-danger" onclick="logout()">Logout</button>
@@ -63,6 +63,12 @@
       <a href="room.html" class="btn btn-primary btn-lg">
         🚀 Start New Quiz
       </a>
+      <div class="mt-4 text-center">
+        <button onclick="window.location.href='create-quiz.html'" class="btn btn-primary">
+          ➕ Create New Quiz
+        </button>
+      </div>
+
     </div>
   </div>
 </div>
@@ -103,10 +109,30 @@
               historyList.innerHTML = "<li>No quiz attempts yet.</li>";
               return;
             }
+            historyList.innerHTML = ""; // ✅ Clears previous content
 
             data.attempts.forEach((a) => {
               const li = document.createElement("li");
-              li.textContent = `${a.quizTitle} – Score: ${a.score}/${a.totalQuestions}`;
+              // Fetch total points of quiz questions dynamically
+              fetch(`http://localhost:5000/api/admin/quiz/${a.quizTitle}`)
+                      .then(res => res.json())
+                      .then(quiz => {
+                        const totalPoints = quiz.questions?.reduce((sum, q) => sum + (q.points || 1), 0) || 0;
+
+                        if (a.quizTitle && typeof a.score === 'number') {
+                          const li = document.createElement("li");
+                          li.textContent = `${a.quizTitle} – Score: ${a.score}/${totalPoints}`;
+                          historyList.appendChild(li);
+                        }
+
+                      })
+                      .catch(err => {
+                        console.error("Error fetching quiz:", err);
+                        const li = document.createElement("li");
+                        li.textContent = `${a.quizTitle} – Score: ${a.score} (Total unavailable)`;
+                        historyList.appendChild(li);
+                      });
+
               historyList.appendChild(li);
             });
           })

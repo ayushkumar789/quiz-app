@@ -1,9 +1,9 @@
+require('dotenv').config();
 const jwt = require('jsonwebtoken');
 const express = require('express');
 const http = require('http');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const dotenv = require('dotenv');
 const { Server } = require('socket.io');
 
 const User = require('./models/User');
@@ -13,7 +13,6 @@ const attemptRoutes = require('./routes/attemptRoutes');
 const authRoutes = require('./routes/authRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 
-dotenv.config();
 const app = express();
 const server = http.createServer(app);
 
@@ -30,163 +29,219 @@ const io = new Server(server, {
     }
 });
 
-// Global State
 const roomUsers = {};
 const roomScores = {};
 const roomQuestions = {};
-const roomIndexes = {};
 const socketRoomMap = {};
+const userSocketMap = {};
+const userQuestions = {};
+const userQuestionIndex = {};
+const userQuestionHistory = {};
+const roomFinishedUsers = {}; // ✅ Add this
 
 io.on('connection', (socket) => {
-    console.log(`User connected: ${socket.id}`);
 
     socket.on('join_room', async ({ username, room, token }) => {
+        const roomName = room.trim();
         try {
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
             const userId = decoded.userId || decoded.id;
 
-            socket.join(room);
-            socketRoomMap[socket.id] = room;
+            if (userSocketMap[userId]) {
+                socket.emit('error', 'You have already joined the room.');
+                return;
+            }
 
-            if (!roomUsers[room]) roomUsers[room] = [];
-            roomUsers[room].push({ socketId: socket.id, username, userId });
+            socket.join(roomName);
+            socketRoomMap[socket.id] = roomName;
+            userSocketMap[userId] = socket.id;
 
-            io.to(room).emit('room_users', roomUsers[room]);
+            if (!roomUsers[roomName]) roomUsers[roomName] = [];
+            roomUsers[roomName].push({ socketId: socket.id, username, userId });
+
+            userQuestionIndex[socket.id] = 0;
+            userQuestionHistory[socket.id] = [];
+
+            // ✅ If quiz has already started, assign questions to this socket
+            if (roomQuestions[roomName] && roomQuestions[roomName].length) {
+                userQuestions[socket.id] = [...roomQuestions[roomName]];
+                console.log(`📩 Assigned existing quiz questions to rejoining socket ${socket.id}`);
+            }
+
+            io.to(roomName).emit('room_users', roomUsers[roomName]);
         } catch (err) {
-            console.error('❌ Invalid token:', err.message);
             socket.emit('error', 'Authentication failed');
         }
     });
 
     socket.on('start_quiz', async (room) => {
+        const roomName = room.trim();
+        console.log("📥 [start_quiz] received for room:", roomName);
+
         try {
-            const quiz = await Quiz.findOne({ title: room }).populate('questions');
-            if (!quiz) return io.to(room).emit('error', 'Quiz not found');
+            const quiz = await Quiz.findOne({ title: roomName }).populate('questions').lean();
+            if (!quiz) return io.to(roomName).emit('error', 'Quiz not found');
 
-            roomScores[room] = {};
-            roomQuestions[room] = quiz.questions;
-            roomIndexes[room] = 0;
+            roomScores[roomName] = {};
+            roomQuestions[roomName] = [...quiz.questions];
 
-            io.to(room).emit('redirect_to_quiz');
+            const usersInRoom = roomUsers[roomName] || [];
+
+            usersInRoom.forEach(user => {
+                const socketId = user.socketId;
+                userQuestions[socketId] = [...quiz.questions];
+                userQuestionIndex[socketId] = 0;
+                userQuestionHistory[socketId] = [];
+            });
+
+            io.to(roomName).emit('redirect_to_quiz');
         } catch (err) {
-            console.error('🔥 Quiz start error:', err.message);
-            io.to(room).emit('error', 'Internal server error');
+            io.to(roomName).emit('error', 'Internal server error');
         }
-    });
-
-    socket.on('ready_for_questions', ({ room }) => {
-        const currentRoom = room || socketRoomMap[socket.id];
-        const questions = roomQuestions[currentRoom];
-        const index = roomIndexes[currentRoom];
-
-        if (!questions || typeof index === 'undefined') return;
-
-        socket.emit('new_question', {
-            question: questions[index].questionText,
-            options: questions[index].options,
-            correctAnswer: questions[index].correctAnswer,
-            index,
-            total: questions.length
-        });
-    });
-
-    socket.on('submit_answer', ({ answer, index, room }) => {
-        const questions = roomQuestions[room];
-        if (!questions || !questions[index]) return;
-
-        const correct = questions[index].correctAnswer;
-        if (answer === correct) {
-            roomScores[room][socket.id] = (roomScores[room][socket.id] || 0) + 1;
-        }
-
-        io.to(room).emit('update_leaderboard', roomScores[room]);
     });
 
     socket.on('next_question', ({ room }) => {
-        const questions = roomQuestions[room];
-        if (!questions) return;
+        console.log("🟢 [next_question] from", socket.id, "in room:", room);
 
-        roomIndexes[room] += 1;
-        const index = roomIndexes[room];
+        const questions = userQuestions[socket.id];
+        const index = userQuestionIndex[socket.id];
 
-        if (index < questions.length) {
-            socket.emit('new_question', {
-                question: questions[index].questionText,
-                options: questions[index].options,
-                correctAnswer: questions[index].correctAnswer,
-                index,
-                total: questions.length
-            });
-        } else {
-            const scores = roomScores[room] || {};
-            const score = scores[socket.id] || 0;
-            socket.emit('quiz_ended', { [socket.id]: score });
+        if (!questions) {
+            console.log("❌ No questions for socket:", socket.id);
+            return;
         }
+
+        if (index >= questions.length) {
+            console.log("⚠️ Quiz already completed for:", socket.id);
+            return;
+        }
+
+        const q = questions[index];
+        console.log(`📤 Sending question ${index + 1} to ${socket.id}`, q);
+
+        socket.emit('new_question', {
+            question: q.questionText,
+            options: q.options,
+            correctAnswer: q.correctAnswer,
+            index,
+            total: questions.length // ✅ This is what was missing
+        });
+
+        if (!userQuestionHistory[socket.id]) userQuestionHistory[socket.id] = [];
+        userQuestionHistory[socket.id].push(index);
+        userQuestionIndex[socket.id] += 1;
     });
 
-    socket.on('end_quiz', ({ room }) => {
-        const scores = roomScores[room] || {};
-        const score = scores[socket.id] || 0;
-        const total = roomQuestions[room]?.length || 0;
 
-        console.log(`📤 end_quiz called for room: ${room}, Socket: ${socket.id}, Score: ${score}/${total}`);
+    socket.on('submit_answer', ({ answer, room }) => {
+        const roomName = room.trim();
+        const questions = userQuestions[socket.id];
+        const sentIndexes = userQuestionHistory[socket.id];
+        if (!questions || !sentIndexes?.length) return;
 
-        // Emit to current socket only
-        socket.emit('quiz_ended', { score, room, total });
+        const lastIndex = sentIndexes[sentIndexes.length - 1];
+        const question = questions[lastIndex];
+        if (!question) return;
 
-        // Optional: save to DB using JWT
-        const token = socket.handshake.auth?.token;
-        if (token) {
+        if (!roomScores[roomName]) roomScores[roomName] = {};
+        if (!roomScores[roomName][socket.id]) roomScores[roomName][socket.id] = 0;
+
+        if (answer === question.correctAnswer) {
+            roomScores[roomName][socket.id] += question.points || 1;
+        }
+
+        io.to(roomName).emit('update_leaderboard', roomScores[roomName]);
+    });
+    socket.on('end_quiz', async ({ room }) => {
+        const roomName = room.trim();
+        if (!roomFinishedUsers[roomName]) roomFinishedUsers[roomName] = new Set();
+        roomFinishedUsers[roomName].add(socket.id);
+
+        const totalUsers = roomUsers[roomName]?.length || 0;
+        const completed = roomFinishedUsers[roomName].size;
+
+        const score = roomScores[roomName]?.[socket.id] || 0;
+        const totalQuestions = roomQuestions[roomName]?.length || 0;
+
+        // ✅ Extract user info from socket
+        const userEntry = Object.entries(userSocketMap).find(([userId, sid]) => sid === socket.id);
+        const userId = userEntry ? userEntry[0] : null;
+
+        const user = roomUsers[roomName]?.find(u => u.socketId === socket.id);
+        const username = user?.username || 'Anonymous';
+
+        // ✅ Save attempt
+        if (userId) {
             try {
-                const decoded = jwt.verify(token, process.env.JWT_SECRET);
-                const userId = decoded.userId || decoded.id;
-
-                const userObj = (roomUsers[room] || []).find(u => u.socketId === socket.id);
-                const username = userObj?.username || "Anonymous";
-
-                QuizAttempt.create({
+                await QuizAttempt.create({
                     userId,
                     username,
-                    room, // Save room name
+                    room: roomName,
+                    quizTitle: roomName,
                     score,
-                    totalQuestions: total,
-                    quizTitle: room // 🔥 NEW FIELD
-                }).then(() => {
-                    console.log(`💾 Saved attempt for ${username} (${userId}) - Score: ${score}/${total}`);
-                }).catch(err => {
-                    console.error("❌ DB Save Failed:", err.message);
+                    totalQuestions
                 });
+                console.log(`✅ QuizAttempt saved for ${username} (${userId}) in room ${roomName}`);
             } catch (err) {
-                console.error("❌ JWT Decode Failed:", err.message);
+                console.error(`❌ Failed to save QuizAttempt for ${userId}:`, err.message);
             }
-        } else {
-            console.warn("⚠️ No token found in handshake.auth.token");
+        }
+
+        // 🟡 Emit waiting screen to current user
+        io.to(socket.id).emit("quiz_waiting", {
+            score,
+            leaderboard: roomScores[roomName],
+            totalUsers,
+            completed
+        });
+
+        // ✅ All done? Notify everyone
+        if (completed === totalUsers) {
+            io.to(roomName).emit("quiz_fully_ended", {
+                leaderboard: roomScores[roomName]
+            });
         }
     });
-
-
-
-
 
 
     socket.on('disconnect', () => {
         const room = socketRoomMap[socket.id];
-        if (room && roomUsers[room]) {
-            roomUsers[room] = roomUsers[room].filter(u => u.socketId !== socket.id);
-            io.to(room).emit('room_users', roomUsers[room]);
-        }
-        delete socketRoomMap[socket.id];
-        console.log(`User disconnected: ${socket.id}`);
-    });
-});
 
-app.get('/', (req, res) => res.send('Quiz Game API Running'));
+        if (room) {
+            // Remove from roomUsers
+            if (roomUsers[room]) {
+                roomUsers[room] = roomUsers[room].filter(u => u.socketId !== socket.id);
+                io.to(room).emit('room_users', roomUsers[room]);
+            }
+
+            // Remove from roomFinishedUsers
+            if (roomFinishedUsers[room]) {
+                roomFinishedUsers[room].delete(socket.id);
+            }
+
+            // Clean up mappings
+            const userEntry = Object.entries(userSocketMap).find(([_, sid]) => sid === socket.id);
+            if (userEntry) delete userSocketMap[userEntry[0]];
+
+            delete socketRoomMap[socket.id];
+            delete userQuestions[socket.id];
+            delete userQuestionIndex[socket.id];
+            delete userQuestionHistory[socket.id];
+        }
+
+        console.log(`❌ Socket disconnected: ${socket.id} from room ${room}`);
+    });
+
+});
 
 mongoose.connect(process.env.MONGO_URI)
     .then(() => {
-        console.log('MongoDB Connected');
-        server.listen(process.env.PORT, () =>
-            console.log(`Server running on http://localhost:${process.env.PORT}`)
-        );
+        console.log('✅ MongoDB Connected');
+        server.listen(process.env.PORT || 5000, () => {
+            console.log(`🚀 Server running on http://localhost:${process.env.PORT || 5000}`);
+        });
     })
-    .catch(err => console.error('MongoDB connection error:', err));
+    .catch(err => {
+        console.error('❌ MongoDB connection error:', err);
+        process.exit(1);
+    });

@@ -36,4 +36,39 @@ router.get('/quiz', verifyToken, async (req, res) => {
     res.json(quizzes);
 });
 
+// Create quiz with all questions at once
+router.post('/create-quiz', verifyToken, async (req, res) => {
+    try {
+        const { title, questions } = req.body;
+
+        if (!title || !questions || !Array.isArray(questions)) {
+            return res.status(400).json({ error: 'Invalid input' });
+        }
+
+        const createdQuestions = await Question.insertMany(questions);
+
+        const quiz = await Quiz.create({
+            title,
+            questions: createdQuestions.map(q => q._id),
+            createdBy: req.user.id
+        });
+
+        res.status(201).json({ message: 'Quiz created', quiz });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Failed to create quiz' });
+    }
+});
+
+
+
+router.get('/quiz/:title', async (req, res) => {
+    try {
+        const quiz = await Quiz.findOne({ title: req.params.title }).populate('questions');
+        if (!quiz) return res.status(404).json({ error: 'Quiz not found' });
+        res.json(quiz);
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
 module.exports = router;

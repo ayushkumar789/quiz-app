@@ -1,3 +1,4 @@
+<!-- FINAL STABLE question.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -9,12 +10,33 @@
     <link rel="stylesheet" href="assets/css/style.css"/>
     <link rel="stylesheet" href="assets/css/animation.css"/>
     <link rel="stylesheet" href="assets/css/responsive.css"/>
+    <style>
+        .thankyou-page {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 50;
+            background: #fff;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            text-align: center;
+        }
+        .thankyou-page-inner {
+            max-width: 500px;
+            width: 90%;
+        }
+        .thankyou-page-inner img {
+            width: 100px;
+            height: 100px;
+        }
+    </style>
 </head>
 <body>
 <main class="overflow-hidden">
     <div class="container">
         <div class="stepTotal">
-            <h4>question <span id="stepNumber">1</span>/<span id="totalSteps">?</span></h4>
+            <h4>Question <span id="stepNumber">1</span>/<span id="totalSteps">?</span></h4>
             <div class="stepBar"><div class="fill" id="progressBar"></div></div>
         </div>
 
@@ -28,30 +50,32 @@
     </div>
 </main>
 
-<div class="thankyou-page" style="display: none;">
-    <header class="thankyouheader"><h2>Quiz has been taken</h2></header>
-    <main class="thankyou-page-inner">
-        <img src="assets/images/thankyou-check.png" alt=""/>
-        <span>Your answer has been submitted</span>
-        <h1>Thank you for taking Quiz</h1>
-        <div class="subscribe">
-            <input type="text" placeholder="Your Email"/>
-            <button type="button">subscribe now</button>
+<div class="thankyou-page" id="thankyouPage">
+    <header class="mb-4">
+        <h2 class="text-3xl font-bold text-green-700">✅ Quiz Submitted!</h2>
+        <p class="text-gray-600 mt-2">Please wait while others complete the quiz.</p>
+    </header>
+
+    <main class="thankyou-page-inner flex flex-col items-center space-y-4">
+        <img src="assets/images/thankyou-check.png" alt="Thank You" />
+        <span class="text-lg text-gray-700" id="waiting-msg">⏳ Waiting for others to finish...</span>
+
+        <div id="live-leaderboard" class="bg-gray-100 p-4 rounded shadow w-full max-w-md mt-4">
+            <h3 class="text-xl font-semibold mb-2">Live Leaderboard</h3>
+            <ul id="leaderboard-list" class="text-left space-y-1 text-gray-800"></ul>
         </div>
+
+        <p class="text-green-600 font-medium hidden" id="final-msg">🎉 All users submitted. Redirecting...</p>
     </main>
 </div>
 
-<div id="error"></div>
-
 <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
-
 <script>
     const token = localStorage.getItem("token");
     const room = localStorage.getItem("room");
+    const username = localStorage.getItem("username");
 
-    const socket = io("http://localhost:5000", {
-        auth: { token }
-    });
+    const socket = io("http://localhost:5000", { auth: { token } });
 
     const stepNumber = document.getElementById("stepNumber");
     const totalSteps = document.getElementById("totalSteps");
@@ -63,13 +87,17 @@
     let selectedAnswer = null;
 
     socket.on("connect", () => {
-        console.log("✅ Connected to Socket.io");
-        if (room) socket.emit("ready_for_questions", { room });
+        if (room) {
+            socket.emit("join_room", { token, room, username });
+            setTimeout(() => socket.emit("next_question", { room }), 500);
+        }
+    });
+
+    socket.on("redirect_to_quiz", () => {
+        setTimeout(() => socket.emit("next_question", { room }), 500);
     });
 
     socket.on("new_question", (data) => {
-        if (!data || !data.question || !data.options) return;
-
         selectedAnswer = null;
         currentIndex = data.index;
         total = data.total;
@@ -106,9 +134,8 @@
             div.className = `option animate delay-${i * 100}`;
             const inputId = `opt${i}_q${currentIndex}`;
             div.innerHTML = `
-                <input type="radio" name="op${currentIndex + 1}" value="${opt}" id="${inputId}" />
-                <label for="${inputId}">${opt}</label>
-            `;
+        <input type="radio" name="op${currentIndex + 1}" value="${opt}" id="${inputId}" />
+        <label for="${inputId}">${opt}</label>`;
             const input = div.querySelector("input");
             input.addEventListener("change", (e) => {
                 selectedAnswer = e.target.value;
@@ -120,18 +147,23 @@
         fieldset.appendChild(optionsDiv);
 
         nextBtn.addEventListener("click", () => {
-            console.log("🟢 Next/Submit button clicked");
             if (!selectedAnswer) return;
 
             socket.emit("submit_answer", { answer: selectedAnswer, index: currentIndex, room });
             nextBtn.disabled = true;
 
-            if (currentIndex + 1 < total) {
-                console.log("➡️ Emitting next_question");
-                socket.emit("next_question", { room });
-            } else {
-                console.log("✅ Emitting end_quiz");
+            if (currentIndex + 1 === total) {
+                // ✅ Final question reached
+                console.log("✅ All questions submitted. Showing thank-you page.");
+                document.querySelector("form").style.display = "none";
+                document.getElementById("thankyouPage").style.display = "flex";
+
+                // 🔥 This is the missing piece — tell backend user is done
                 socket.emit("end_quiz", { room });
+
+            } else {
+                // 🚀 Proceed to next question
+                socket.emit("next_question", { room });
             }
         });
 
@@ -142,36 +174,34 @@
         container.appendChild(fieldset);
     }
 
-    socket.on("quiz_ended", (data) => {
-        console.log("📩 Received quiz_ended", data);
-        const score = data?.score || 0;
-
-        document.querySelector("main").style.display = "none";
-        document.querySelector(".thankyou-page").style.display = "block";
-
-        fetch("http://localhost:5000/api/attempts/save", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": "Bearer " + token
-            },
-            body: JSON.stringify({ room, score })
-        })
-            .then(res => res.json())
-            .then(() => {
-                console.log("✅ Score saved. Redirecting...");
-                setTimeout(() => {
-                    window.location.href = "room.html";
-                }, 1500);
-            })
-            .catch(err => {
-                console.error("❌ Score save failed", err);
-                setTimeout(() => {
-                    window.location.href = "room.html";
-                }, 1500);
-            });
+    socket.on("quiz_waiting", ({ score, leaderboard, totalUsers, completed }) => {
+        document.querySelector("form").style.display = "none";
+        document.getElementById("thankyouPage").style.display = "flex";
+        document.getElementById("waiting-msg").textContent = `⏳ ${completed} of ${totalUsers} users submitted.`;
+        updateLeaderboard(leaderboard);
     });
-</script>
 
+    socket.on("update_leaderboard", (scores) => {
+        updateLeaderboard(scores);
+    });
+
+    socket.on("quiz_fully_ended", ({ leaderboard }) => {
+        updateLeaderboard(leaderboard);
+        document.getElementById("final-msg").classList.remove("hidden");
+        setTimeout(() => window.location.href = "room.html", 4000);
+    });
+
+    function updateLeaderboard(scores) {
+        const ul = document.getElementById("leaderboard-list");
+        ul.innerHTML = "";
+        const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+        sorted.forEach(([id, score]) => {
+            const you = id === socket.id;
+            const li = document.createElement("li");
+            li.innerHTML = `<strong>${you ? "You" : "Player"}</strong>: ${score}`;
+            ul.appendChild(li);
+        });
+    }
+</script>
 </body>
 </html>
