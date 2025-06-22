@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Panel</title>
+</head>
+<body>
+<h1>Create Quiz</h1>
+<input id="quizTitle" placeholder="Quiz Title" />
+<button onclick="createQuiz()">Create Quiz</button>
+
+<div id="questionSection" style="display:none;">
+    <h2>Add Questions</h2>
+    <input id="questionText" placeholder="Question" />
+    <input id="option1" placeholder="Option 1" />
+    <input id="option2" placeholder="Option 2" />
+    <input id="option3" placeholder="Option 3" />
+    <input id="option4" placeholder="Option 4" />
+    <input id="correctAnswer" placeholder="Correct Answer" />
+    <input id="points" type="number" placeholder="Points" value="1" />
+    <button onclick="addQuestion()">Add Question</button>
+</div>
+
+<script>
+    const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY3ZWQ2ZDE4OGFjYTI1ZDViNTA3MjA0MiIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc0MzYxNDE3NiwiZXhwIjoxNzQ0MjE4OTc2fQ.PvlVA13SdM4AD5eyWtFsxk0g9-8wY7RbdJeX44BoPUU'; // Set admin token here
+    let quizId = '';
+
+    async function createQuiz() {
+        const title = document.getElementById('quizTitle').value;
+        const res = await fetch('http://localhost:5000/api/admin/quiz', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': token
+            },
+            body: JSON.stringify({ title })
+        });
+
+        const data = await res.json();
+        quizId = data._id;
+        document.getElementById('questionSection').style.display = 'block';
+        alert('Quiz created!');
+    }
+
+    async function addQuestion() {
+        const questionText = document.getElementById('questionText').value;
+        const options = [
+            document.getElementById('option1').value,
+            document.getElementById('option2').value,
+            document.getElementById('option3').value,
+            document.getElementById('option4').value
+        ];
+        const correctAnswer = document.getElementById('correctAnswer').value;
+        const points = parseInt(document.getElementById('points').value);
+
+        const res = await fetch(`http://localhost:5000/api/admin/quiz/${quizId}/question`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': token
+            },
+            body: JSON.stringify({ questionText, options, correctAnswer, points })
+        });
+
+        const data = await res.json();
+        alert('Question added!');
+    }
+</script>
+</body>
+</html>

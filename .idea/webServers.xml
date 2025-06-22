@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="f6ecffe7-4efb-48a4-a1af-b4a91b7ecba5" name="Frontend Server" url="http://localhost:5500">
+        <fileTransfer mountedRoot="D:\Anurag University\Projects\quiz-app\frontend" accessType="MOUNT" port="0" />
+      </webServer>
+    </option>
+  </component>
+</project>

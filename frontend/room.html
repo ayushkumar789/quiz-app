@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Quiz Room</title>
+    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 text-gray-800 p-4 font-sans">
+
+<script>
+    if (!localStorage.getItem("token")) {
+        window.location.href = "login.html";
+    }
+</script>
+
+<div class="max-w-3xl mx-auto">
+    <h1 class="text-3xl font-bold text-center mb-6">🎓 Real-Time Quiz Room</h1>
+
+    <!-- Join Inputs -->
+    <div class="flex gap-2 justify-center mb-6">
+        <input id="username" type="text" placeholder="Enter username" class="border p-2 rounded w-1/3" />
+        <input id="room" type="text" placeholder="Enter room code" class="border p-2 rounded w-1/3" />
+        <button onclick="joinRoom()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Join</button>
+    </div>
+
+    <!-- Room Users -->
+    <div class="bg-white p-4 rounded shadow mb-4">
+        <h2 class="text-xl font-semibold mb-2">👥 Users in Room:</h2>
+        <ul id="users" class="list-disc list-inside text-gray-700"></ul>
+    </div>
+
+    <!-- Start Quiz -->
+    <div class="flex justify-center mb-4">
+        <button onclick="startQuiz()" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">Start Quiz (Admin only)</button>
+    </div>
+
+    <!-- Leaderboard -->
+    <div id="leaderboard" class="bg-white p-6 rounded shadow mb-4">
+        <h3 class="text-xl font-bold mb-2 flex items-center gap-2"><i data-lucide="trophy"></i> Live Leaderboard</h3>
+        <ul id="leaderboardList" class="space-y-1 text-gray-700"></ul>
+    </div>
+
+    <!-- Final Result -->
+    <h3 id="result" class="text-center text-xl font-semibold text-green-600"></h3>
+</div>
+
+<script>
+    lucide.createIcons();
+
+    const token = localStorage.getItem("token");
+    const socket = io("http://localhost:5000", {
+        auth: { token }
+    });
+
+    const userMap = {};
+    let mySocketId = null;
+
+    socket.on("connect", () => {
+        mySocketId = socket.id;
+    });
+
+    function joinRoom() {
+        const username = document.getElementById("username").value.trim();
+        const room = document.getElementById("room").value.trim();
+
+        if (!username || !room) {
+            alert("Please enter both username and room!");
+            return;
+        }
+
+        if (!token) {
+            alert("Login token missing. Please login again.");
+            window.location.href = "login.html";
+            return;
+        }
+
+        localStorage.setItem("username", username);
+        localStorage.setItem("room", room);
+
+        socket.emit("join_room", { username, room, token });
+    }
+
+    function startQuiz() {
+        const room = localStorage.getItem("room");
+        if (!room) {
+            alert("Room not found in localStorage");
+            return;
+        }
+        socket.emit("start_quiz", room);
+    }
+
+    socket.on("redirect_to_quiz", () => {
+        console.log("✅ redirect_to_quiz event received");
+        window.location.href = "question.html";
+    });
+
+    socket.on("room_users", (users) => {
+        const ul = document.getElementById("users");
+        ul.innerHTML = "";
+        users.forEach(user => {
+            const li = document.createElement("li");
+            li.textContent = user.username;
+            ul.appendChild(li);
+            userMap[user.socketId] = user.username;
+        });
+    });
+
+    socket.on("update_leaderboard", (scores) => {
+        const list = document.getElementById("leaderboardList");
+        list.innerHTML = "";
+
+        const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+        sorted.forEach(([socketId, score]) => {
+            const name = userMap[socketId] || "Player";
+            const li = document.createElement("li");
+            li.innerHTML = `<span class="font-semibold">${name}</span>: ${score}`;
+            list.appendChild(li);
+        });
+    });
+
+    socket.on("quiz_ended", (scores) => {
+        const score = scores?.score || scores?.[socket.id] || 0;
+        document.getElementById("result").textContent = `🎉 Quiz Ended! Your Score: ${score}`;
+    });
+</script>
+
+
+</body>
+</html>
